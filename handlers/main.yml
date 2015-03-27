@@ -1,0 +1,10 @@
+---
+# handlers file for consuldns
+- name: start supervisord
+  service: name=supervisord state=started enabled=yes
+
+- name: restart supervisor
+  command: supervisorctl reload
+
+- name: start dnsmasq
+  service: name=dnsmasq state=started enabled=yes

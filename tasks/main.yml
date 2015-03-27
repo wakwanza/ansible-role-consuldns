@@ -1,0 +1,88 @@
+---
+# tasks file for consuldns
+  - name: Install libselinux
+    yum: name=libselinux-python state=installed
+
+  - selinux: state=disabled
+    ignore_errors: yes
+
+  - name: Install the EPEL repos
+    copy: src=repo/epel.repo  dest=/etc/yum.repos.d/epel.repo  owner=root group=root
+
+  - name: Install the Common packages
+    yum: pkg={{ item }} state=installed
+    with_items:
+     - wget
+     - nano
+     - python-pip
+     - openssl
+     - python-devel
+     - openssl-devel
+     - nc
+     - bc
+     - libselinux-python
+     - golang
+     - unzip
+     - dnsmasq
+
+  - name: Install supervisord
+    pip: name=supervisor state=present
+
+  - name: Make the supervisor conf directory
+    file: dest=/etc/supervisor state=directory
+
+  - name: Setup the supervisord file
+    copy: src=conf/supervisor.j2  dest=/etc/supervisord.conf
+
+  - name: Set the init script for supervisor
+    copy: src=conf/supervisord.init dest=/etc/init.d/supervisord mode=0755
+
+  - name: Create control group for consul
+    group: name=consul state=present
+
+  - name: Create user for consul
+    user: name=consul group=consul createhome=no
+
+  - name: Load the zip binary to targets
+    unarchive: src={{ consul.local_binary }} dest=/usr/bin/  creates=/usr/bin/consul owner=consul mode=0775
+
+  - name: Make the opt consul directory
+    file: path=/opt/consul state=directory owner=consul
+
+  - name: unpack the web UI zip
+    unarchive: src={{ consul.local_webgui }} dest=/opt/consul/ owner=consul
+
+  - name: Create server config directory
+    file: path=/etc/consul.d/server state=directory owner=consul
+
+  - name: Create client config directory
+    file: path=/etc/consul.d/client state=directory owner=consul
+
+  - name: Add the var  consul folder
+    file: path=/var/consul state=directory owner=consul group=consul mode=755
+
+  - name: Modify the dnsmasq fragment
+    lineinfile: "backup=yes dest=/etc/dnsmasq.conf backrefs=yes regexp='#^server=/localnet/192.168.0.1'  insertafter='^#server=/localnet/192.168.0.1' line='strict-order\nserver=/consul/127.0.0.1#8600' state=present"
+
+  - name: Modify the resolv.conf
+    lineinfile: backup=yes dest=/etc/resolv.conf backrefs=yes regexp="^search " insertafter="^search " line='nameserver 127.0.0.1' state=present
+
+  - name: Create the consul hash key for this cluster
+    local_action: command consul keygen
+    register: consul_hash
+
+  - name: Save the hash to local file
+    local_action: copy content="{{ consul_hash.stdout }}" dest={{ hash_location_local }}
+
+  - name: Copy the server config fragment to the nodes
+    template: src=consulserver.j2 dest=/etc/consul.d/server/config.json owner=consul
+
+  - name: Load the supervisor consul fragment
+    copy: src=conf/consul.ini dest=/etc/supervisor/consul.ini
+
+  - name: start the services
+    command: echo "starting"
+    notify:
+    - restart supervisor
+    - start dnsmasq
+
