@@ -69,6 +69,7 @@
 
   - name: Create the consul hash key for this cluster
     local_action: command consul keygen
+    run_once: true
     register: consul_hash
 
   - name: Save the hash to local file
